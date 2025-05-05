@@ -1,107 +1,125 @@
-print("me no very smart")
--- New robust verification system
+-- Strict source verification system with debug output
 local function VerifyExecutionSource()
-    -- The exact GitHub URL we want to verify against
-    local validGitHubUrl = "https://raw.githubusercontent.com/Idontknowhowtotype/NS2M/refs/heads/main/EXP"
+    print("[DEBUG] Starting source verification...")
     
-    -- Method 1: Check the executing script's URL directly
-    local function CheckScriptUrl()
-        -- This works on most modern executors
-        local url
-        local success = pcall(function()
-            url = getexecutorname and getexecutorname() or nil
-            if not url then
-                local info = debug.getinfo(2, "S")
-                url = info and info.source or nil
-            end
-            return url
+    -- The GitHub URL we want to verify against
+    local validGitHubUrl = "https://raw.githubusercontent.com/Idontknowhowtotype/NS2M/refs/heads/main/EXP"
+    print("[DEBUG] Valid URL:", validGitHubUrl)
+    
+    -- Get the current script's source
+    local currentScriptSource = "UNKNOWN"
+    local isFromCorrectSource = false
+    local isModifiedGitHub = false
+    local isNormalExecution = false
+    local debugInfo = {}
+
+    -- Collect debug information about the environment
+    debugInfo.executorName = identifyexecutor and identifyexecutor() or "Unknown"
+    debugInfo.synAvailable = syn and true or false
+    debugInfo.getfenvAvailable = getfenv and true or false
+    debugInfo.debugAvailable = debug and debug.getinfo and true or false
+
+    print("[DEBUG] Environment Info:")
+    for k, v in pairs(debugInfo) do
+        print("  "..k..":", v)
+    end
+
+    -- Try different methods to get script source
+    print("\n[DEBUG] Attempting to get script source...")
+    
+    -- Method 1: Check debug info
+    if debug and debug.getinfo then
+        local success, info = pcall(function()
+            return debug.getinfo(2, "S")
         end)
-        return success and url or nil
-    end
-
-    -- Method 2: Check through injected environment variables
-    local function CheckEnvironment()
-        -- Some executors store this information differently
-        if _G.__EXECUTOR_SCRIPT_URL then
-            return _G.__EXECUTOR_SCRIPT_URL
+        
+        if success and info and info.source then
+            currentScriptSource = info.source
+            print("[DEBUG] [Method 1] Got source from debug.getinfo:", currentScriptSource)
+        else
+            print("[DEBUG] [Method 1] Failed to get source from debug.getinfo")
         end
-        return nil
     end
 
-    -- Try all verification methods
-    local sourcesToCheck = {
-        CheckScriptUrl(),
-        CheckEnvironment(),
-        -- Add more methods here if needed
-    }
+    -- Method 2: Check getscriptsource if available
+    if getscriptsource then
+        currentScriptSource = getscriptsource()
+        print("[DEBUG] [Method 2] Got source from getscriptsource:", currentScriptSource)
+    else
+        print("[DEBUG] [Method 2] getscriptsource not available")
+    end
 
-    -- Analyze all found sources
-    for _, source in ipairs(sourcesToCheck) do
-        if source then
-            -- Clean the source string
-            local cleanSource = tostring(source)
-                :gsub("^['\"]", "")
-                :gsub("['\"]$", "")
-                :gsub("@", "")
-                :gsub("^%+", "")
-                :gsub("%+$", "")
-                :gsub("%s+", "")
-
-            -- Check for matches
-            if cleanSource == validGitHubUrl then
-                return "VALID"
-            elseif cleanSource:find("githubusercontent%.com/Idontknowhowtotype/NS2M", 1, true) then
-                return "MODIFIED_GITHUB"
-            elseif cleanSource:match("^[@@]") then
-                return "BYPASS_ATTEMPT"
+    -- Method 3: Check loadstring environment
+    if getfenv then
+        local env = getfenv(2)
+        if env.script == nil then
+            print("[DEBUG] [Method 3] Detected loadstring execution environment")
+            if currentScriptSource == "UNKNOWN" and debug and debug.getinfo then
+                local info = debug.getinfo(2, "S")
+                if info and info.source then
+                    currentScriptSource = info.source
+                    print("[DEBUG] [Method 3] Loadstring source:", currentScriptSource)
+                end
             end
+        else
+            print("[DEBUG] [Method 3] Standard execution environment")
         end
+    else
+        print("[DEBUG] [Method 3] getfenv not available")
     end
 
-    -- Final fallback checks
-    if not game:GetService("RunService"):IsStudio() then
-        local scriptName = debug.getinfo(1, "S").source
-        if scriptName:match("^@") then
-            return "BYPASS_ATTEMPT"
-        end
+    print("\n[DEBUG] Final determined source:", currentScriptSource)
+
+    -- Strict verification checks
+    if currentScriptSource == validGitHubUrl then
+        isFromCorrectSource = true
+        print("[DEBUG] Source matches exactly - VALID")
+    elseif string.find(currentScriptSource or "", "githubusercontent.com/Idontknowhowtotype/NS2M") then
+        isModifiedGitHub = true
+        print("[DEBUG] Source is modified GitHub URL")
+    elseif string.sub(currentScriptSource or "", 1, 1) == "@" then
+        isNormalExecution = true
+        print("[DEBUG] Local script execution detected")
+    else
+        print("[DEBUG] Unknown source type")
     end
 
-    return "UNKNOWN_SOURCE"
+    -- Determine the result
+    if isFromCorrectSource then
+        print("[DEBUG] Verification result: VALID")
+        return "VALID"
+    elseif isModifiedGitHub then
+        print("[DEBUG] Verification result: MODIFIED_GITHUB")
+        return "MODIFIED_GITHUB"
+    elseif isNormalExecution then
+        print("[DEBUG] Verification result: BYPASS_ATTEMPT")
+        return "BYPASS_ATTEMPT"
+    else
+        print("[DEBUG] Verification result: UNKNOWN_SOURCE")
+        return "UNKNOWN_SOURCE"
+    end
 end
 
--- Test the verification (remove this in production)
-print("Verification result:", VerifyExecutionSource())
-
--- Then modify your main execution block to use this:
+-- Main verification check with debug output
+print("\n=== STARTING VERIFICATION ===")
 local verificationResult = VerifyExecutionSource()
+print("=== FINAL VERIFICATION RESULT ===", verificationResult, "\n")
 
+-- Handle the verification result
 if verificationResult == "VALID" then
-    -- Your main script execution here
-    print("Successfully verified GitHub source!")
-
-
+    -- Continue with normal execution
+    print("Loading script...")
+    -- [Rest of your script here]
 else
-    -- Handle failed verification
-    warn("Verification failed:", verificationResult)
     -- Handle different types of bypass attempts
-    local bypassTypes = {
-        ["BYPASS_ATTEMPT"] = "Local Execution Bypass Attempt",
-        ["MODIFIED_GITHUB"] = "Modified GitHub URL Attempt",  -- Added this new type
-        ["UNKNOWN_SOURCE"] = "Unknown Execution Source"
-    }
-    
     warn("Source verification failed! Reason:", verificationResult)
-    
     
     -- Different anti-tampering measures based on verification result
     if verificationResult == "BYPASS_ATTEMPT" then
-        -- Crash the script if it's a local execution attempt
-        while true do end
+        error("Script must be loaded from GitHub, not executed locally")
     elseif verificationResult == "MODIFIED_GITHUB" then
-        -- Show error message for modified GitHub URLs
         error("Script must be executed directly from the official GitHub repository")
     else
-        -- For unknown sources, just warn and potentially exit
-        warn("...")
+        error("Unknown execution source - cannot verify script authenticity")
     end
 end
