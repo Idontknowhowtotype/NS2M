@@ -1,3 +1,4 @@
+print("me very smart")
 -- Source verification system with strict GitHub URL check
 local function VerifyExecutionSource()
     -- The exact GitHub URL we want to verify against
