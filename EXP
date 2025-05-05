@@ -1,4 +1,4 @@
-print("jicken chokey")
+print("jicken chokey") -- AYYY HELLO? GITHUB RU WORKING?????
 -- Strict but reliable source verification system
 local function VerifyExecutionSource()
     -- The GitHub URL we want to verify against (raw.githubusercontent.com version)
