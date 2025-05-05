@@ -1,77 +1,107 @@
-print("me very smart")
--- Source verification system with strict GitHub URL check
+print("me no very smart")
+-- New robust verification system
 local function VerifyExecutionSource()
     -- The exact GitHub URL we want to verify against
     local validGitHubUrl = "https://raw.githubusercontent.com/Idontknowhowtotype/NS2M/refs/heads/main/EXP"
     
-    -- Get the current script's source
-    local currentScriptSource
-    local isFromCorrectGitHub = false
-    local isNormalExecution = false
-    local isModifiedGitHub = false
-    
-    -- Debug print to see what the executor is reporting as source
-    print("[DEBUG] Attempting to get script source...")
-    
-    -- Try different methods to get script source
-    local success, result = pcall(function()
-        -- Method 1: Some executors provide this
-        if getscriptsource then
-            currentScriptSource = getscriptsource()
-            print("[DEBUG] getscriptsource result:", currentScriptSource)
-        -- Method 2: Debug library approach
-        elseif debug and debug.getinfo then
-            local info = debug.getinfo(2, "S")
-            if info and info.source then
-                currentScriptSource = info.source
-                print("[DEBUG] debug.getinfo result:", currentScriptSource)
+    -- Method 1: Check the executing script's URL directly
+    local function CheckScriptUrl()
+        -- This works on most modern executors
+        local url
+        local success = pcall(function()
+            url = getexecutorname and getexecutorname() or nil
+            if not url then
+                local info = debug.getinfo(2, "S")
+                url = info and info.source or nil
+            end
+            return url
+        end)
+        return success and url or nil
+    end
+
+    -- Method 2: Check through injected environment variables
+    local function CheckEnvironment()
+        -- Some executors store this information differently
+        if _G.__EXECUTOR_SCRIPT_URL then
+            return _G.__EXECUTOR_SCRIPT_URL
+        end
+        return nil
+    end
+
+    -- Try all verification methods
+    local sourcesToCheck = {
+        CheckScriptUrl(),
+        CheckEnvironment(),
+        -- Add more methods here if needed
+    }
+
+    -- Analyze all found sources
+    for _, source in ipairs(sourcesToCheck) do
+        if source then
+            -- Clean the source string
+            local cleanSource = tostring(source)
+                :gsub("^['\"]", "")
+                :gsub("['\"]$", "")
+                :gsub("@", "")
+                :gsub("^%+", "")
+                :gsub("%+$", "")
+                :gsub("%s+", "")
+
+            -- Check for matches
+            if cleanSource == validGitHubUrl then
+                return "VALID"
+            elseif cleanSource:find("githubusercontent%.com/Idontknowhowtotype/NS2M", 1, true) then
+                return "MODIFIED_GITHUB"
+            elseif cleanSource:match("^[@@]") then
+                return "BYPASS_ATTEMPT"
             end
         end
-    end)
-    
-    if not success then
-        print("[DEBUG] Failed to get script source:", result)
     end
-    
-    -- Check if we got any source info
-    if currentScriptSource then
-        print("[DEBUG] Raw source:", currentScriptSource)
-        
-        -- Clean the source string (remove quotes or other artifacts)
-        local cleanedSource = currentScriptSource:gsub("['\"]", "")
-        print("[DEBUG] Cleaned source:", cleanedSource)
-        
-        -- Strict check for the exact GitHub URL
-        if cleanedSource == validGitHubUrl then
-            print("[DEBUG] Exact GitHub URL match")
-            isFromCorrectGitHub = true
-        -- Check if it's a modified version of the GitHub URL
-        elseif string.find(cleanedSource, "githubusercontent.com/Idontknowhowtotype/NS2M") then
-            print("[DEBUG] Modified GitHub URL detected")
-            isModifiedGitHub = true
-        -- Check if it's from normal script execution (starts with @ for local scripts)
-        elseif string.sub(currentScriptSource, 1, 1) == "@" then
-            print("[DEBUG] Local execution detected")
-            isNormalExecution = true
-        else
-            print("[DEBUG] Unknown source format")
+
+    -- Final fallback checks
+    if not game:GetService("RunService"):IsStudio() then
+        local scriptName = debug.getinfo(1, "S").source
+        if scriptName:match("^@") then
+            return "BYPASS_ATTEMPT"
         end
-    else
-        print("[DEBUG] No source information available")
     end
+
+    return "UNKNOWN_SOURCE"
+end
+
+-- Test the verification (remove this in production)
+print("Verification result:", VerifyExecutionSource())
+
+-- Then modify your main execution block to use this:
+local verificationResult = VerifyExecutionSource()
+
+if verificationResult == "VALID" then
+    -- Your main script execution here
+    print("Successfully verified GitHub source!")
+
+
+else
+    -- Handle failed verification
+    warn("Verification failed:", verificationResult)
+    -- Handle different types of bypass attempts
+    local bypassTypes = {
+        ["BYPASS_ATTEMPT"] = "Local Execution Bypass Attempt",
+        ["MODIFIED_GITHUB"] = "Modified GitHub URL Attempt",  -- Added this new type
+        ["UNKNOWN_SOURCE"] = "Unknown Execution Source"
+    }
     
-    -- Determine the result
-    if isFromCorrectGitHub then
-        print("[DEBUG] Verification result: VALID")
-        return "VALID"
-    elseif isModifiedGitHub then
-        print("[DEBUG] Verification result: MODIFIED_GITHUB")
-        return "MODIFIED_GITHUB"
-    elseif isNormalExecution then
-        print("[DEBUG] Verification result: BYPASS_ATTEMPT")
-        return "BYPASS_ATTEMPT"
+    warn("Source verification failed! Reason:", verificationResult)
+    
+    
+    -- Different anti-tampering measures based on verification result
+    if verificationResult == "BYPASS_ATTEMPT" then
+        -- Crash the script if it's a local execution attempt
+        while true do end
+    elseif verificationResult == "MODIFIED_GITHUB" then
+        -- Show error message for modified GitHub URLs
+        error("Script must be executed directly from the official GitHub repository")
     else
-        print("[DEBUG] Verification result: UNKNOWN_SOURCE")
-        return "UNKNOWN_SOURCE"
+        -- For unknown sources, just warn and potentially exit
+        warn("...")
     end
 end
