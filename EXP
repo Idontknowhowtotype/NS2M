@@ -1,1 +1,71 @@
-print("jicken chokey")
+-- Configuration
+local SERVER_URL = "https://cg62437.tw1.ru/verify.php"
+local SECRET_KEY = "e8beea11-5080-43d3-8b12-c972a432266c"
+local GITHUB_URL = "https://raw.githubusercontent.com/Idontknowhowtotype/NS2M/main/EXP"
+
+-- Universal hash function
+local function GetContentHash(content)
+    if pcall(function() return game:GetService("HashService") end) then
+        return game:GetService("HashService"):ComputeMD5Hash(content)
+    else
+        -- Fallback for executors without HashService
+        local hash = 0
+        for i = 1, #content do
+            hash = hash + string.byte(content, i) * i
+        end
+        return tostring(hash)
+    end
+end
+
+-- Phase 1: Initial Verification with Discord Logging
+local function VerifyInitialLoad()
+    local userId = tostring(game:GetService("Players").LocalPlayer.UserId)
+    local url = SERVER_URL.."?action=init&key="..SECRET_KEY.."&scriptUrl="..GITHUB_URL.."&userId="..userId
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    
+    if not success or response ~= "APPROVED" then
+        error("Initial verification failed: "..tostring(response))
+    end
+    return true
+end
+
+-- Phase 2: Server-Side Content Validation
+local function VerifyContentWithServer()
+    local content = game:HttpGet(GITHUB_URL, true)
+    local hash = GetContentHash(content)
+    local userId = tostring(game:GetService("Players").LocalPlayer.UserId)
+    local url = SERVER_URL.."?action=validate&key="..SECRET_KEY.."&contentHash="..hash.."&userId="..userId
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    
+    if not success or response ~= "VERIFIED" then
+        error("Content validation failed: "..tostring(response))
+    end
+    return true
+end
+
+-- Main Execution Flow
+local function SecureLoad()
+    -- Phase 1: Initial verification
+    if not VerifyInitialLoad() then return end
+    
+    -- Phase 2: Content verification
+    if not VerifyContentWithServer() then return end
+    
+    -- Load the actual script
+    local success, err = pcall(function()
+        loadstring(game:HttpGet(GITHUB_URL, true))()
+    end)
+    
+    if not success then
+        warn("Script load failed:", err)
+    end
+end
+
+-- Start the secure loading process
+SecureLoad()
