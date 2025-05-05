@@ -1,1 +1,126 @@
 print("skibidi")
+-- Configuration
+local SERVER_URL = "https://cg62437.tw1.ru/verify.php"
+local SECRET_KEY = "e8beea11-5080-43d3-8b12-c972a432266c"
+local GITHUB_URL = "https://raw.githubusercontent.com/Idontknowhowtotype/NS2M/main/EXP"
+
+-- Utility Functions
+local function GetHardwareId()
+    local success, id = pcall(function()
+        return game:GetService("RbxAnalyticsService"):GetClientId()
+    end)
+    return success and id or "UNKNOWN_HWID_"..tostring(math.random(10000,99999))
+end
+
+local function GetContentHash(content)
+    -- Try HashService first
+    local success, hash = pcall(function()
+        return game:GetService("HashService"):ComputeMD5Hash(content)
+    end)
+    
+    -- Fallback for executors without HashService
+    if not success then
+        local simpleHash = 0
+        for i = 1, math.min(#content, 1000) do -- Only hash first 1000 chars for performance
+            simpleHash = (simpleHash + string.byte(content, i) * i) % 2147483647
+        end
+        return "fallback_"..simpleHash
+    end
+    return hash
+end
+
+-- Phase 1: Initial Handshake
+local function InitialHandshake()
+    local sessionId = game:GetService("HttpService"):GenerateGUID(false)
+    local userId = game:GetService("Players").LocalPlayer.UserId
+    local hardwareId = GetHardwareId()
+    
+    local url = SERVER_URL.."?action=init"..
+        "&sessionId="..sessionId..
+        "&userId="..userId..
+        "&hardwareId="..hardwareId..
+        "&key="..SECRET_KEY
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    
+    if not success or response ~= "APPROVED" then
+        error("Phase 1 failed: "..tostring(response or "No response"))
+    end
+    
+    return sessionId
+end
+
+-- Phase 2: Content Verification
+local function VerifyContent(sessionId)
+    -- Download script content
+    local content
+    local success, err = pcall(function()
+        content = game:HttpGet(GITHUB_URL, true)
+    end)
+    
+    if not success then
+        error("Failed to download script: "..tostring(err))
+    end
+    
+    -- Calculate hash
+    local hash = GetContentHash(content)
+    
+    -- Verify with server
+    local url = SERVER_URL.."?action=verify_content"..
+        "&contentHash="..hash..
+        "&sessionId="..sessionId..
+        "&key="..SECRET_KEY
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+    
+    if not success or response ~= "VERIFIED" then
+        error("Phase 2 failed: "..tostring(response or "No response"))
+    end
+    
+    return content
+end
+
+-- Phase 3: Execution
+local function ExecuteScript(content, sessionId)
+    -- Run the script
+    local success, err = pcall(loadstring(content))
+    if not success then
+        error("Execution failed: "..tostring(err))
+    end
+    
+    -- Optional post-execution report
+    pcall(function()
+        game:HttpGet(SERVER_URL.."?action=execution_complete"..
+            "&sessionId="..sessionId..
+            "&key="..SECRET_KEY, true)
+    end)
+end
+
+-- Main Execution Flow
+local function Main()
+    -- Phase 1: Initial Handshake
+    local sessionId = InitialHandshake()
+    
+    -- Phase 2: Content Verification
+    local scriptContent = VerifyContent(sessionId)
+    
+    -- Phase 3: Execution
+    ExecuteScript(scriptContent, sessionId)
+    
+    print("Script executed successfully!")
+end
+
+-- Start the process
+local success, err = pcall(Main)
+if not success then
+    warn("Verification failed:", err)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Verification Failed",
+        Text = tostring(err),
+        Duration = 5
+    })
+end
