@@ -1,3 +1,4 @@
+print("jicken chokey")
 -- Strict source verification system with debug output
 local function VerifyExecutionSource()
     print("[DEBUG] Starting source verification...")
